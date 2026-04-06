@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>mygame.html</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050810; font-family: 'Segoe UI', sans-serif; touch-action: none; color: white; }
+        canvas { display: none; filter: contrast(1.1); }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 500; backdrop-filter: blur(10px); }
+        .hidden { display: none !important; }
+        .title { font-size: 40px; color: #00ffcc; text-shadow: 0 0 20px #00ffcc; font-weight: 900; text-align: center; }
+        .btn { padding: 15px 40px; font-size: 20px; color: #00ffcc; border: 2px solid #00ffcc; background: rgba(0,255,204,0.1); border-radius: 50px; cursor: pointer; font-weight: bold; margin: 10px; min-width: 180px; text-align: center; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 101; pointer-events: none; }
+        .hp-bar { width: 200px; height: 12px; background: #222; border: 1px solid #ff3333; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+        #hp-fill { width: 100%; height: 100%; background: #ff3333; transition: 0.2s; }
+        #controls { position: fixed; inset: 0; pointer-events: none; z-index: 100; }
+        #joystick-zone { position: absolute; bottom: 50px; left: 50px; width: 100px; height: 100px; background: rgba(255,255,255,0.03); border-radius: 50%; pointer-events: auto; border: 1px solid rgba(0,255,204,0.2); }
+        #joystick-stick { position: absolute; top: 30px; left: 30px; width: 40px; height: 40px; background: #00ffcc; border-radius: 50%; }
+        #dash-btn { position: absolute; bottom: 60px; right: 60px; width: 80px; height: 80px; background: rgba(0,255,204,0.1); border: 2px solid #00ffcc; border-radius: 50%; pointer-events: auto; display: flex; align-items: center; justify-content: center; color: #00ffcc; font-weight: 900; }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen" class="overlay">
+        <div class="title">DEMON SURVIVOR</div>
+        <div id="main-highscore" style="color: gold; margin: 10px;">BEST: 0</div>
+        <button class="btn" onclick="startGame()">PLAY</button>
+    </div>
+
+    <div id="game-over-screen" class="overlay hidden">
+        <div class="title" style="color: #ff3333;">WASTED</div>
+        <div id="final-score" style="font-size: 22px; margin: 5px;">SCORE: 0</div>
+        <div id="coin-status" style="font-size: 18px; color: gold; margin-bottom: 15px;">COINS: 0</div>
+        <button id="revive-btn" class="btn" style="border-color: gold; color: gold; display: none;" onclick="revivePlayer()">REVIVE (20 COINS)</button>
+        <button class="btn" onclick="startGame()">RESTART</button>
+    </div>
+
+    <div id="ui" class="hidden">
+        <div id="score-display" style="font-size: 20px; color: #00ffcc;">SCORE: 0</div>
+        <div id="coin-display" style="font-size: 18px; color: gold;">COINS: 0</div>
+        <div class="hp-bar"><div id="hp-fill"></div></div>
+    </div>
+
+    <div id="controls" class="hidden">
+        <div id="joystick-zone"><div id="joystick-stick"></div></div>
+        <div id="dash-btn">DASH</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let score = 0, coins = parseInt(localStorage.getItem('demonCoins')) || 0;
+    let highscore = localStorage.getItem('demonHighscore') || 0;
+    let gameActive = false, player, enemies, boss = null, powerups, stars, camera, playerTrail = [], mapCoins = [];
+    let audioCtx = null, masterGain = null;
+    let spawnTimer, powerTimer, coinTimer; // Timers control karne ke liye
+
+    document.getElementById('main-highscore').innerText = "BEST: " + highscore;
+
+    function initAudio() {
+        if (audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain(); masterGain.gain.value = 0.05;
+        masterGain.connect(audioCtx.destination); playBGM();
+    }
+
+    function playBGM() {
+        if (!gameActive) return;
+        let osc = audioCtx.createOscillator(); let g = audioCtx.createGain();
+        osc.type = 'sawtooth'; osc.frequency.value = [110, 130, 146][Math.floor(Math.random()*3)];
+        g.gain.setValueAtTime(0.01, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc.connect(g); g.connect(masterGain);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+        setTimeout(playBGM, 500);
+    }
+
+    function playSound(f, t, d, v=0.1) {
+        if(!audioCtx) return;
+        let o = audioCtx.createOscillator(); let g = audioCtx.createGain();
+        o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+        g.gain.setValueAtTime(v, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + d);
+    }
+
+    function startGame() {
+        initAudio();
+        document.getElementById('game-over-screen').classList.add('hidden');
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('ui').classList.remove('hidden');
+        document.getElementById('controls').classList.remove('hidden');
+        canvas.style.display = 'block';
+        initGameState();
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        gameActive = true;
+        startSpawning(); // Spawning shuru
+        update();
+    }
+
+    function startSpawning() {
+        if(spawnTimer) clearTimeout(spawnTimer);
+        if(powerTimer) clearTimeout(powerTimer);
+        if(coinTimer) clearTimeout(coinTimer);
+        spawnEnemy();
+        spawnPower();
+        spawnCoin();
+    }
+
+    function initGameState() {
+        player = { x: 1500, y: 1500, size: 35, spd: 7, angle: 0, hp: 100, isDashing: false, dashTime: 0, shieldTime: 0 };
+        enemies = []; powerups = []; stars = []; playerTrail = []; boss = null; mapCoins = [];
+        camera = { x: 1250, y: 1250 }; score = 0;
+        for(let i=0; i<300; i++) stars.push({ x: Math.random()*3000, y: Math.random()*3000, s: Math.random()*2 });
+    }
+
+    function revivePlayer() {
+        if(coins >= 20) {
+            coins -= 20; localStorage.setItem('demonCoins', coins);
+            player.hp = 100; 
+            player.shieldTime = 300; // 5 Sec Shield
+            gameActive = true;
+            document.getElementById('game-over-screen').classList.add('hidden');
+            canvas.style.display = 'block';
+            startSpawning(); // WAPAS SE SPAWNING SHURU!
+            update(); 
+            playSound(1200, 'sine', 0.5, 0.2);
+        }
+    }
+
+    let joy = { active: false, x: 0, y: 0 };
+    const zone = document.getElementById('joystick-zone'), stick = document.getElementById('joystick-stick');
+    zone.addEventListener('touchstart', (e) => { joy.active = true; e.preventDefault(); });
+    zone.addEventListener('touchmove', (e) => {
+        let rect = zone.getBoundingClientRect(), dx = e.touches[0].clientX - (rect.left + 50), dy = e.touches[0].clientY - (rect.top + 50);
+        let dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40), angle = Math.atan2(dy, dx);
+        joy.x = Math.cos(angle) * (dist/40); joy.y = Math.sin(angle) * (dist/40);
+        stick.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+        player.angle = angle;
+    });
+    zone.addEventListener('touchend', () => { joy.active = false; joy.x = 0; joy.y = 0; stick.style.transform = `translate(0,0)`; });
+    document.getElementById('dash-btn').addEventListener('touchstart', () => { if(!player.isDashing) { player.isDashing = true; player.dashTime = 15; playSound(600, 'sine', 0.2); } });
+
+    function spawnEnemy() {
+        if(!gameActive) return;
+        if(!boss) { 
+            let a = Math.random()*Math.PI*2;
+            enemies.push({ x: player.x+Math.cos(a)*800, y: player.y+Math.sin(a)*800, s: 16, spd: 3 });
+        }
+        spawnTimer = setTimeout(spawnEnemy, 1000);
+    }
+
+    function spawnBoss() {
+        boss = { x: player.x + 500, y: player.y + 500, s: 75, hp: 100, maxHp: 100, spd: 2 };
+        playSound(100, 'sawtooth', 1.0, 0.2);
+    }
+
+    function spawnPower() {
+        if(!gameActive) return;
+        powerups.push({ x: player.x+(Math.random()-0.5)*1500, y: player.y+(Math.random()-0.5)*1500 });
+        powerTimer = setTimeout(spawnPower, 15000);
+    }
+
+    function spawnCoin() {
+        if(!gameActive) return;
+        mapCoins.push({ x: player.x+(Math.random()-0.5)*1200, y: player.y+(Math.random()-0.5)*1200 });
+        coinTimer = setTimeout(spawnCoin, 3000);
+    }
+
+    function update() {
+        if(!gameActive) return;
+        camera.x += (player.x - canvas.width/2 - camera.x) * 0.1;
+        camera.y += (player.y - canvas.height/2 - camera.y) * 0.1;
+        ctx.fillStyle = '#050810'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        // --- PEEYUSH MALIK WATERMARK ---
+        ctx.save(); // Purani settings save karo
+        ctx.fillStyle = "rgba(0, 255, 204, 0.2)"; // Halka neon green color (transparent)
+        ctx.font = "bold 20px 'Segoe UI', sans-serif"; // Font size aur style
+        ctx.textAlign = "right"; // Right side se align
+        // Screen ke bottom-right kone mein: (Canvas Width - 20px, Canvas Height - 20px)
+        ctx.fillText("Developed by Peeyush Malik", canvas.width - 20, canvas.height - 20);
+        ctx.restore(); // Purani settings wapas lao (taaki game par asar na pade)
+        // ---------------------------------
+
+        ctx.fillStyle = '#fff'; stars.forEach(s => ctx.fillRect(s.x-camera.x, s.y-camera.y, s.s, s.s));
+
+        let mSpd = player.isDashing ? player.spd*2.5 : player.spd;
+        if(joy.active) { player.x += joy.x*mSpd; player.y += joy.y*mSpd; }
+        if(player.dashTime > 0) player.dashTime--; else player.isDashing = false;
+        if(player.shieldTime > 0) player.shieldTime--;
+
+        if(joy.active || player.isDashing) { playerTrail.unshift({ x: player.x, y: player.y, angle: player.angle, life: 1.0 }); }
+        if(playerTrail.length > 10) playerTrail.pop();
+        playerTrail.forEach(t => { 
+            t.life -= 0.1; 
+            drawDemon(t.x-camera.x, t.y-camera.y, player.size, `rgba(0, 255, 204, ${t.life*0.3})`, t.angle+Math.PI/2); 
+        });
+
+        drawDemon(player.x-camera.x, player.y-camera.y, player.size, '#00ffcc', player.angle+Math.PI/2);
+        
+        if(player.shieldTime > 0) {
+            ctx.beginPath(); ctx.arc(player.x - camera.x, player.y - camera.y, player.size + 15, 0, Math.PI*2);
+            ctx.strokeStyle = `rgba(0, 255, 255, ${Math.random() * 0.5 + 0.3})`; ctx.lineWidth = 4; ctx.stroke();
+        }
+
+        mapCoins.forEach((c, i) => {
+            ctx.fillStyle = 'gold'; ctx.beginPath(); ctx.arc(c.x-camera.x, c.y-camera.y, 8, 0, Math.PI*2); ctx.fill();
+            if(Math.hypot(player.x-c.x, player.y-c.y) < 40) { coins++; mapCoins.splice(i, 1); playSound(1500, 'sine', 0.1, 0.05); }
+        });
+
+        if(boss) {
+            let dx = boss.x-player.x, dy = boss.y-player.y, d = Math.hypot(dx, dy);
+            boss.x -= (dx/d)*boss.spd; boss.y -= (dy/d)*boss.spd;
+            drawDemon(boss.x-camera.x, boss.y-camera.y, boss.s, 'white', Math.atan2(-dy, -dx)+Math.PI/2);
+            let sx = boss.x-camera.x, sy = boss.y-camera.y;
+            ctx.fillStyle = '#ff3333'; ctx.font = 'bold 20px Segoe UI'; ctx.textAlign = 'center';
+            ctx.fillText("BOSS", sx, sy-boss.s-25);
+            ctx.fillStyle = '#222'; ctx.fillRect(sx-50, sy-boss.s-15, 100, 8);
+            ctx.fillStyle = '#ff3333'; ctx.fillRect(sx-50, sy-boss.s-15, 100*(boss.hp/boss.maxHp), 8);
+            if(d < player.size+boss.s) { 
+                if(player.isDashing) { boss.hp -= 2; } 
+                else if(player.shieldTime <= 0) { player.hp -= 1; }
+            }
+            if(boss.hp <= 0) { boss = null; score += 1000; }
+        }
+
+        enemies.forEach((e, i) => {
+            let dx = e.x-player.x, dy = e.y-player.y, d = Math.hypot(dx, dy);
+            e.x -= (dx/d)*e.spd; e.y -= (dy/d)*e.spd;
+            drawDemon(e.x-camera.x, e.y-camera.y, e.s, '#ff4444', Math.atan2(-dy, -dx)+Math.PI/2);
+            if(d < player.size+e.s) {
+                if(player.isDashing) { enemies.splice(i, 1); score += 20; if(score > 0 && score % 1000 === 0) spawnBoss(); } 
+                else if(player.shieldTime <= 0) { player.hp -= 0.5; }
+            }
+        });
+
+        powerups.forEach((p, i) => {
+            ctx.fillStyle = '#00ff00'; ctx.fillRect(p.x-camera.x-10, p.y-camera.y-10, 20, 20);
+            if(Math.hypot(player.x-p.x, player.y-p.y) < 40) { player.hp = 100; powerups.splice(i, 1); }
+        });
+
+        document.getElementById('score-display').innerText = "SCORE: " + score;
+        document.getElementById('coin-display').innerText = "COINS: " + coins;
+        document.getElementById('hp-fill').style.width = player.hp + "%";
+
+        if(player.hp <= 0) {
+            gameActive = false;
+            localStorage.setItem('demonCoins', coins);
+            if(score > highscore) localStorage.setItem('demonHighscore', score);
+            document.getElementById('final-score').innerText = "SCORE: " + score;
+            document.getElementById('coin-status').innerText = "TOTAL COINS: " + coins;
+            document.getElementById('game-over-screen').classList.remove('hidden');
+            document.getElementById('revive-btn').style.display = coins >= 20 ? 'block' : 'none';
+            canvas.style.display = 'none';
+        } else { requestAnimationFrame(update); }
+    }
+
+    function drawDemon(x, y, s, c, a) {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+        ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(-s,s); ctx.lineTo(s,s); ctx.closePath();
+        ctx.fillStyle = c; ctx.fill(); ctx.restore();
+    }
+</script>
+</body>
+</html>
+
