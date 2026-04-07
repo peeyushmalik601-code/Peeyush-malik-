@@ -18,6 +18,8 @@
         #joystick-zone { position: absolute; bottom: 50px; left: 50px; width: 100px; height: 100px; background: rgba(255,255,255,0.03); border-radius: 50%; pointer-events: auto; border: 1px solid rgba(0,255,204,0.2); }
         #joystick-stick { position: absolute; top: 30px; left: 30px; width: 40px; height: 40px; background: #00ffcc; border-radius: 50%; }
         #dash-btn { position: absolute; bottom: 60px; right: 60px; width: 80px; height: 80px; background: rgba(0,255,204,0.1); border: 2px solid #00ffcc; border-radius: 50%; pointer-events: auto; display: flex; align-items: center; justify-content: center; color: #00ffcc; font-weight: 900; }
+        .hidden { display: none !important; }
+
     </style>
 </head>
 <body>
@@ -25,7 +27,7 @@
     <div id="start-screen" class="overlay">
         <div class="title">DEMON SURVIVOR</div>
         <div id="main-highscore" style="color: gold; margin: 10px;">BEST: 0</div>
-        <button class="btn" onclick="startGame()">PLAY</button>
+        <button class="btn" onclick="showQuiz()">PLAY</button>
     </div>
         <div id="quiz-screen" class="overlay hidden">
         <div class="title" style="font-size: 30px; color: #ffcc00;">16 DUNI... ?</div>
