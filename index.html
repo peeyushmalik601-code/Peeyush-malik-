@@ -27,6 +27,17 @@
         <div id="main-highscore" style="color: gold; margin: 10px;">BEST: 0</div>
         <button class="btn" onclick="startGame()">PLAY</button>
     </div>
+        <div id="quiz-screen" class="overlay hidden">
+        <div class="title" style="font-size: 30px; color: #ffcc00;">16 DUNI... ?</div>
+        <div style="margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button class="btn" style="min-width: 120px;" onclick="checkAnswer(16)">16</button>
+            <button class="btn" style="min-width: 120px;" onclick="checkAnswer(8)">8</button>
+            <button class="btn" style="min-width: 120px;" onclick="checkAnswer(32)">32</button>
+            <button class="btn" style="min-width: 120px;" onclick="checkAnswer(64)">64</button>
+        </div>
+    </div>
+
+    
 
     <div id="game-over-screen" class="overlay hidden">
         <div class="title" style="color: #ff3333;">WASTED</div>
@@ -52,6 +63,26 @@
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+        // Quiz interface dikhane ke liye function
+    function showQuiz() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('quiz-screen').classList.remove('hidden');
+    }
+
+    // Answer check karne ka logic
+    function checkAnswer(ans) {
+        if(ans === 8) {
+            // Agar '8' dabaya toh game shuru!
+            document.getElementById('quiz-screen').classList.add('hidden');
+            startGame(); 
+            console.log("Sahi pakde hain!");
+        } else {
+            // Galat answer par "Hat be" alert aur page reload
+            alert("Hat be! Padhai likhai karo thoda.");
+            location.reload(); 
+        }
+    }
+
     
     let score = 0, coins = parseInt(localStorage.getItem('demonCoins')) || 0;
     let highscore = localStorage.getItem('demonHighscore') || 0;
